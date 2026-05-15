@@ -86,6 +86,7 @@ impl AdminService {
                 proxy_url: entry.proxy_url,
                 refresh_failure_count: entry.refresh_failure_count,
                 disabled_reason: entry.disabled_reason,
+                disabled_reason_detail: entry.disabled_reason_detail,
                 endpoint: entry.endpoint.unwrap_or_else(|| default_endpoint.clone()),
             })
             .collect();

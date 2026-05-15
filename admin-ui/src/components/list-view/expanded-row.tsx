@@ -60,6 +60,14 @@ export function ExpandedRow({ cred, balance, loadingBalance, onQueryBalance }: E
             </Field>
             <Field label="成功调用">{cred.successCount.toLocaleString()}</Field>
           </div>
+          {cred.disabled && cred.disabledReasonDetail && (
+            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="text-xs text-gray-500 mb-1">失败详情</div>
+              <pre className="text-xs font-mono whitespace-pre-wrap break-all bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 px-3 py-2 rounded border border-red-100 dark:border-red-900 max-h-40 overflow-auto">
+{cred.disabledReasonDetail}
+              </pre>
+            </div>
+          )}
         </div>
       </td>
     </tr>

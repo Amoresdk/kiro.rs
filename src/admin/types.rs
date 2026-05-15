@@ -60,6 +60,9 @@ pub struct CredentialStatusItem {
     /// 禁用原因
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_reason: Option<String>,
+    /// 禁用原因详情（最后一次失败的具体上游错误信息）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled_reason_detail: Option<String>,
     /// 端点名称（决定该凭据走哪套 Kiro API，已回退到默认端点）
     pub endpoint: String,
 }

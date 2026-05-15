@@ -26,6 +26,7 @@ export interface CredentialStatusItem {
   proxyUrl?: string
   refreshFailureCount: number
   disabledReason?: string
+  disabledReasonDetail?: string
   endpoint: string
 }
 

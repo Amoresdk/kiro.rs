@@ -148,9 +148,10 @@ impl KiroProvider {
             let endpoint = match self.endpoint_for(&ctx.credentials) {
                 Ok(e) => e,
                 Err(e) => {
+                    let detail = format!("endpoint 解析失败: {}", e);
                     last_error = Some(e);
                     // endpoint 解析失败：记为失败，换下一张凭据
-                    self.token_manager.report_failure(ctx.id);
+                    self.token_manager.report_failure(ctx.id, Some(detail));
                     continue;
                 }
             };
@@ -229,7 +230,10 @@ impl KiroProvider {
                     tracing::warn!("凭据 #{} token 强制刷新失败，计入失败", ctx.id);
                 }
 
-                let has_available = self.token_manager.report_failure(ctx.id);
+                let has_available = self.token_manager.report_failure(
+                    ctx.id,
+                    Some(format!("MCP {}: {}", status, body)),
+                );
                 if !has_available {
                     anyhow::bail!("MCP 请求失败（所有凭据已用尽）: {} {}", status, body);
                 }
@@ -306,8 +310,9 @@ impl KiroProvider {
             let endpoint = match self.endpoint_for(&ctx.credentials) {
                 Ok(e) => e,
                 Err(e) => {
+                    let detail = format!("endpoint 解析失败: {}", e);
                     last_error = Some(e);
-                    self.token_manager.report_failure(ctx.id);
+                    self.token_manager.report_failure(ctx.id, Some(detail));
                     continue;
                 }
             };
@@ -415,7 +420,10 @@ impl KiroProvider {
                     tracing::warn!("凭据 #{} token 强制刷新失败，计入失败", ctx.id);
                 }
 
-                let has_available = self.token_manager.report_failure(ctx.id);
+                let has_available = self.token_manager.report_failure(
+                    ctx.id,
+                    Some(format!("{} {}: {}", api_type, status, body)),
+                );
                 if !has_available {
                     anyhow::bail!(
                         "{} API 请求失败（所有凭据已用尽）: {} {}",
