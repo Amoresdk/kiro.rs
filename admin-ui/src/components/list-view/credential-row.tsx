@@ -21,7 +21,7 @@ interface CredentialRowProps {
   expanded: boolean
   onToggleSelect: () => void
   onToggleExpand: () => void
-  onViewBalance: (id: number) => void
+  onRefreshBalance: (id: number) => void
 }
 
 const AUTH_BADGE: Record<string, { label: string; class: string }> = {
@@ -32,7 +32,7 @@ const AUTH_BADGE: Record<string, { label: string; class: string }> = {
 
 export function CredentialRow({
   cred, balance, loadingBalance, selected, expanded,
-  onToggleSelect, onToggleExpand, onViewBalance,
+  onToggleSelect, onToggleExpand, onRefreshBalance,
 }: CredentialRowProps) {
   const status = deriveStatus(cred)
   const setDisabled = useSetDisabled()
@@ -127,7 +127,7 @@ export function CredentialRow({
           aria-label="启用/禁用"
         />
       </td>
-      <td className="px-3 py-2.5"><RowActions cred={cred} onViewBalance={onViewBalance} /></td>
+      <td className="px-3 py-2.5"><RowActions cred={cred} loadingBalance={loadingBalance} onRefreshBalance={onRefreshBalance} /></td>
     </tr>
   )
 }

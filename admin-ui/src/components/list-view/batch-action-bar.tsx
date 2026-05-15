@@ -1,4 +1,4 @@
-import { CheckCircle2, RefreshCw, MoreHorizontal, RotateCcw, Trash2, Eraser, Search } from 'lucide-react'
+import { CheckCircle2, RefreshCw, Wallet, MoreHorizontal, RotateCcw, Trash2, Eraser } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -13,15 +13,15 @@ interface BatchActionBarProps {
   verifyProgress: { current: number; total: number }
   batchRefreshing: boolean
   batchRefreshProgress: { current: number; total: number }
-  queryingInfo: boolean
-  queryInfoProgress: { current: number; total: number }
+  batchBalanceRefreshing: boolean
+  batchBalanceProgress: { current: number; total: number }
   onCancelSelection: () => void
   onBatchVerify: () => void
   onBatchForceRefresh: () => void
+  onBatchRefreshBalance: () => void
   onBatchResetFailure: () => void
   onBatchDelete: () => void
   onClearAllDisabled: () => void
-  onQueryCurrentPage: () => void
 }
 
 export function BatchActionBar(props: BatchActionBarProps) {
@@ -49,6 +49,17 @@ export function BatchActionBar(props: BatchActionBarProps) {
               ? `刷新中 ${props.batchRefreshProgress.current}/${props.batchRefreshProgress.total}`
               : '批量刷新 Token'}
           </Button>
+          <Button
+            onClick={props.onBatchRefreshBalance}
+            size="sm" variant="outline"
+            disabled={props.batchBalanceRefreshing}
+            aria-busy={props.batchBalanceRefreshing}
+          >
+            <Wallet className={`h-3.5 w-3.5 mr-1.5 ${props.batchBalanceRefreshing ? 'animate-pulse' : ''}`} />
+            {props.batchBalanceRefreshing
+              ? `刷新中 ${props.batchBalanceProgress.current}/${props.batchBalanceProgress.total}`
+              : '批量刷新余额'}
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -75,15 +86,6 @@ export function BatchActionBar(props: BatchActionBarProps) {
               >
                 <Eraser className="mr-2 h-4 w-4" />
                 清除所有已禁用 ({props.totalDisabledCount})
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={props.onQueryCurrentPage}
-                disabled={props.queryingInfo}
-              >
-                <Search className="mr-2 h-4 w-4" />
-                {props.queryingInfo
-                  ? `查询中 ${props.queryInfoProgress.current}/${props.queryInfoProgress.total}`
-                  : '查询当前页信息'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

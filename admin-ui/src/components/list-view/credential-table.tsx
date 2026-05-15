@@ -14,8 +14,7 @@ interface CredentialTableProps {
   onToggleAllOnPage: () => void
   balances: Map<number, BalanceResponse>
   loadingBalances: Set<number>
-  onViewBalance: (id: number) => void
-  onQueryBalance: (id: number) => void
+  onRefreshBalance: (id: number) => void
   sortKey: SortKey | null
   sortDir: SortDir
   onSortChange: (key: SortKey | null, dir: SortDir) => void
@@ -27,7 +26,7 @@ interface CredentialTableProps {
 
 export function CredentialTable({
   pageItems, selectedIds, onToggleSelect, onToggleAllOnPage,
-  balances, loadingBalances, onViewBalance, onQueryBalance,
+  balances, loadingBalances, onRefreshBalance,
   sortKey, sortDir, onSortChange,
   filteredEmpty, totalEmpty, onClearFilters, onAddCredential,
 }: CredentialTableProps) {
@@ -86,7 +85,7 @@ export function CredentialTable({
                 expanded={expandedIds.has(cred.id)}
                 onToggleSelect={() => onToggleSelect(cred.id)}
                 onToggleExpand={() => toggleExpand(cred.id)}
-                onViewBalance={onViewBalance}
+                onRefreshBalance={onRefreshBalance}
               />
             ]
             if (expandedIds.has(cred.id)) {
@@ -96,7 +95,7 @@ export function CredentialTable({
                   cred={cred}
                   balance={balances.get(cred.id) ?? null}
                   loadingBalance={loadingBalances.has(cred.id)}
-                  onQueryBalance={onQueryBalance}
+                  onQueryBalance={onRefreshBalance}
                 />
               )
             }

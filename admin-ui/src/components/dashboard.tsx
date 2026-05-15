@@ -6,7 +6,6 @@ import { storage } from '@/lib/storage'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { BalanceDialog } from '@/components/balance-dialog'
 import { AddCredentialDialog } from '@/components/add-credential-dialog'
 import { BatchImportDialog } from '@/components/batch-import-dialog'
 import { KamImportDialog } from '@/components/kam-import-dialog'
@@ -49,8 +48,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const [balanceMap, setBalanceMap] = useState<Map<number, BalanceResponse>>(new Map())
   const [loadingBalanceIds, setLoadingBalanceIds] = useState<Set<number>>(new Set())
 
-  const [balanceDialogOpen, setBalanceDialogOpen] = useState(false)
-  const [balanceDialogId, setBalanceDialogId] = useState<number | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [batchImportOpen, setBatchImportOpen] = useState(false)
   const [kamOpen, setKamOpen] = useState(false)
@@ -62,8 +59,8 @@ export function Dashboard({ onLogout }: DashboardProps) {
   const cancelVerifyRef = useRef(false)
   const [batchRefreshing, setBatchRefreshing] = useState(false)
   const [batchRefreshProgress, setBatchRefreshProgress] = useState({ current: 0, total: 0 })
-  const [queryingInfo, setQueryingInfo] = useState(false)
-  const [queryInfoProgress, setQueryInfoProgress] = useState({ current: 0, total: 0 })
+  const [batchBalanceRefreshing, setBatchBalanceRefreshing] = useState(false)
+  const [batchBalanceProgress, setBatchBalanceProgress] = useState({ current: 0, total: 0 })
 
   const [darkMode, setDarkMode] = useState(() =>
     typeof window !== 'undefined' && document.documentElement.classList.contains('dark')
@@ -159,27 +156,28 @@ export function Dashboard({ onLogout }: DashboardProps) {
   }
   const cancelSelection = () => setSelectedIds(new Set())
 
-  const handleViewBalance = (id: number) => { setBalanceDialogId(id); setBalanceDialogOpen(true) }
-
-  // —— 单条余额查询（展开行 / 立即查询用） ——
+  // —— 单条余额刷新（行内 Wallet 图标 / 展开行立即查询） ——
   const handleQueryOne = async (id: number) => {
     setLoadingBalanceIds(prev => { const n = new Set(prev); n.add(id); return n })
     try {
       const balance = await getCredentialBalance(id)
       setBalanceMap(prev => { const n = new Map(prev); n.set(id, balance); return n })
     } catch (e) {
-      toast.error('查询余额失败：' + extractErrorMessage(e))
+      toast.error('刷新余额失败：' + extractErrorMessage(e))
     } finally {
       setLoadingBalanceIds(prev => { const n = new Set(prev); n.delete(id); return n })
     }
   }
 
-  // —— 当前页查询信息 ——
-  const handleQueryCurrentPageInfo = async () => {
-    const ids = pageItems.filter(c => !c.disabled).map(c => c.id)
-    if (ids.length === 0) { toast.error('当前页没有可查询的启用凭据'); return }
+  // —— 批量刷新余额（按选中范围；仅启用凭据） ——
+  const handleBatchRefreshBalance = async () => {
+    const ids = visibleSelectedIds.filter(id => {
+      const c = credentials.find(x => x.id === id)
+      return c && !c.disabled
+    })
+    if (ids.length === 0) { toast.error('选中的凭据中没有可刷新余额的凭据'); return }
 
-    setQueryingInfo(true); setQueryInfoProgress({ current: 0, total: ids.length })
+    setBatchBalanceRefreshing(true); setBatchBalanceProgress({ current: 0, total: ids.length })
     let success = 0, fail = 0
 
     for (let i = 0; i < ids.length; i++) {
@@ -192,12 +190,12 @@ export function Dashboard({ onLogout }: DashboardProps) {
       } catch { fail++ } finally {
         setLoadingBalanceIds(prev => { const n = new Set(prev); n.delete(id); return n })
       }
-      setQueryInfoProgress({ current: i + 1, total: ids.length })
+      setBatchBalanceProgress({ current: i + 1, total: ids.length })
     }
 
-    setQueryingInfo(false)
-    if (fail === 0) toast.success(`查询完成：${success}/${ids.length}`)
-    else toast.warning(`查询完成：成功 ${success}，失败 ${fail}`)
+    setBatchBalanceRefreshing(false)
+    if (fail === 0) toast.success(`余额刷新完成：${success}/${ids.length}`)
+    else toast.warning(`余额刷新完成：成功 ${success}，失败 ${fail}`)
   }
 
   // —— 批量验活 ——
@@ -426,15 +424,15 @@ export function Dashboard({ onLogout }: DashboardProps) {
               verifyProgress={verifyProgress}
               batchRefreshing={batchRefreshing}
               batchRefreshProgress={batchRefreshProgress}
-              queryingInfo={queryingInfo}
-              queryInfoProgress={queryInfoProgress}
+              batchBalanceRefreshing={batchBalanceRefreshing}
+              batchBalanceProgress={batchBalanceProgress}
               onCancelSelection={cancelSelection}
               onBatchVerify={handleBatchVerify}
               onBatchForceRefresh={handleBatchForceRefresh}
+              onBatchRefreshBalance={handleBatchRefreshBalance}
               onBatchResetFailure={handleBatchResetFailure}
               onBatchDelete={handleBatchDelete}
               onClearAllDisabled={handleClearAllDisabled}
-              onQueryCurrentPage={handleQueryCurrentPageInfo}
             />
 
             <CredentialTable
@@ -444,8 +442,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
               onToggleAllOnPage={toggleAllOnPage}
               balances={balanceMap}
               loadingBalances={loadingBalanceIds}
-              onViewBalance={handleViewBalance}
-              onQueryBalance={handleQueryOne}
+              onRefreshBalance={handleQueryOne}
               sortKey={urlState.sort}
               sortDir={urlState.dir}
               onSortChange={(k, d) => setUrlState({ sort: k, dir: d })}
@@ -466,11 +463,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
             )}
           </main>
 
-          <BalanceDialog
-            credentialId={balanceDialogId}
-            open={balanceDialogOpen}
-            onOpenChange={setBalanceDialogOpen}
-          />
           <AddCredentialDialog open={addOpen} onOpenChange={setAddOpen} />
           <BatchImportDialog open={batchImportOpen} onOpenChange={setBatchImportOpen} />
           <KamImportDialog open={kamOpen} onOpenChange={setKamOpen} />

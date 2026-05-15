@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { RefreshCw, RotateCcw, Wallet, MoreHorizontal, ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
+import { RefreshCw, Wallet, MoreHorizontal, ChevronUp, ChevronDown, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -18,10 +18,11 @@ import type { CredentialStatusItem } from '@/types/api'
 
 interface RowActionsProps {
   cred: CredentialStatusItem
-  onViewBalance: (id: number) => void
+  loadingBalance: boolean
+  onRefreshBalance: (id: number) => void
 }
 
-export function RowActions({ cred, onViewBalance }: RowActionsProps) {
+export function RowActions({ cred, loadingBalance, onRefreshBalance }: RowActionsProps) {
   const [showDelete, setShowDelete] = useState(false)
   const refresh = useForceRefreshToken()
   const reset = useResetFailure()
@@ -34,7 +35,7 @@ export function RowActions({ cred, onViewBalance }: RowActionsProps) {
     ? 'API Key 凭据无需刷新 Token'
     : cred.disabled ? '已禁用的凭据无法刷新 Token' : '刷新 Token'
 
-  const handleRefresh = () => refresh.mutate(cred.id, {
+  const handleRefreshToken = () => refresh.mutate(cred.id, {
     onSuccess: (r) => toast.success(r.message),
     onError: (e) => toast.error('刷新失败：' + extractErrorMessage(e)),
   })
@@ -67,8 +68,9 @@ export function RowActions({ cred, onViewBalance }: RowActionsProps) {
           <TooltipTrigger asChild>
             <Button
               size="sm" variant="ghost" className="h-7 w-7 p-0"
-              onClick={handleRefresh} disabled={refreshDisabled}
+              onClick={handleRefreshToken} disabled={refreshDisabled}
               aria-label="刷新 Token"
+              aria-busy={refresh.isPending}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${refresh.isPending ? 'animate-spin' : ''}`} />
             </Button>
@@ -91,11 +93,17 @@ export function RowActions({ cred, onViewBalance }: RowActionsProps) {
           <TooltipTrigger asChild>
             <Button
               size="sm" variant="ghost" className="h-7 w-7 p-0"
-              onClick={() => onViewBalance(cred.id)}
-              aria-label="查看余额"
-            ><Wallet className="h-3.5 w-3.5" /></Button>
+              onClick={() => onRefreshBalance(cred.id)}
+              disabled={loadingBalance || cred.disabled}
+              aria-label="刷新余额"
+              aria-busy={loadingBalance}
+            >
+              {loadingBalance
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Wallet className="h-3.5 w-3.5" />}
+            </Button>
           </TooltipTrigger>
-          <TooltipContent>查看余额详情</TooltipContent>
+          <TooltipContent>{cred.disabled ? '已禁用的凭据无法刷新余额' : '刷新余额'}</TooltipContent>
         </Tooltip>
 
         <DropdownMenu>
