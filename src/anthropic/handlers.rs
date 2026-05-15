@@ -525,9 +525,19 @@ async fn handle_non_stream_request(
                                 } else {
                                     serde_json::from_str(buffer)
                                         .unwrap_or_else(|e| {
-                                            tracing::warn!(
-                                                "工具输入 JSON 解析失败: {}, tool_use_id: {}",
-                                                e, tool_use.tool_use_id
+                                            let tail_start = buffer.len().saturating_sub(200);
+                                            // 按 UTF-8 边界裁剪
+                                            let tail_start = (tail_start..=buffer.len())
+                                                .find(|&i| buffer.is_char_boundary(i))
+                                                .unwrap_or(buffer.len());
+                                            tracing::error!(
+                                                target: "tool_use_diag",
+                                                tool_use_id = %tool_use.tool_use_id,
+                                                tool_name = %tool_use.name,
+                                                total_bytes = buffer.len(),
+                                                tail = %&buffer[tail_start..],
+                                                error = %e,
+                                                "[DIAG] 非流式：tool_use stop=true 但累积 JSON 解析失败（这会导致客户端拿到空 input）"
                                             );
                                             serde_json::json!({})
                                         })
@@ -582,6 +592,32 @@ async fn handle_non_stream_request(
     // 确定 stop_reason
     if has_tool_use && stop_reason == "end_turn" {
         stop_reason = "tool_use".to_string();
+    }
+
+    // [DIAG] 收尾体检：遍历所有 tool_json_buffer，检查没有进入 tool_uses 的（即 stop=true 没到达过的）
+    let collected_ids: std::collections::HashSet<&str> = tool_uses
+        .iter()
+        .filter_map(|tu| tu.get("id").and_then(|v| v.as_str()))
+        .collect();
+    for (tool_id, buf) in &tool_json_buffers {
+        if collected_ids.contains(tool_id.as_str()) {
+            continue;
+        }
+        let parse_result = serde_json::from_str::<serde_json::Value>(buf);
+        let tail_start = buf.len().saturating_sub(200);
+        let tail_start = (tail_start..=buf.len())
+            .find(|&i| buf.is_char_boundary(i))
+            .unwrap_or(buf.len());
+        tracing::error!(
+            target: "tool_use_diag",
+            tool_use_id = %tool_id,
+            total_bytes = buf.len(),
+            tail = %&buf[tail_start..],
+            stop_reason = %stop_reason,
+            json_valid = parse_result.is_ok(),
+            parse_error = parse_result.as_ref().err().map(|e| e.to_string()).unwrap_or_default(),
+            "[DIAG] 非流式：流结束时 tool_use 未收到 stop=true，partial_json 累积现场"
+        );
     }
 
     // 构建响应内容

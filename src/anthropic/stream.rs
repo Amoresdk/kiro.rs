@@ -28,6 +28,15 @@ fn find_char_boundary(s: &str, target: usize) -> usize {
     pos
 }
 
+/// 诊断工具：取字符串末尾最多 max_bytes 字节，按 UTF-8 边界裁剪
+fn tail_preview(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let start = find_char_boundary(s, s.len() - max_bytes);
+    s[start..].to_string()
+}
+
 /// 需要跳过的包裹字符
 ///
 /// 当 thinking 标签被这些字符包裹时，认为是在引用标签而非真正的标签：
@@ -542,6 +551,10 @@ pub struct StreamContext {
     /// 是否需要剥离 thinking 内容开头的换行符
     /// 模型输出 `<thinking>\n` 时，`\n` 可能与标签在同一 chunk 或下一 chunk
     strip_thinking_leading_newline: bool,
+    /// 诊断用：按 tool_use_id 累积 partial_json 片段（仅观察，不参与转发）
+    tool_input_diag_buffers: HashMap<String, String>,
+    /// 诊断用：每个 tool_use_id 的片段计数
+    tool_input_diag_chunks: HashMap<String, u32>,
 }
 
 impl StreamContext {
@@ -568,6 +581,8 @@ impl StreamContext {
             thinking_block_index: None,
             text_block_index: None,
             strip_thinking_leading_newline: false,
+            tool_input_diag_buffers: HashMap::new(),
+            tool_input_diag_chunks: HashMap::new(),
         }
     }
 
@@ -668,6 +683,37 @@ impl StreamContext {
                 // 处理 ContentLengthExceededException
                 if exception_type == "ContentLengthExceededException" {
                     self.state_manager.set_stop_reason("max_tokens");
+
+                    // [DIAG] 关键现场：上游因 max_output_tokens 截断时，
+                    // 把所有正在累积但未收到 stop=true 的 tool_use 缓冲快照下来
+                    if self.tool_input_diag_buffers.is_empty() {
+                        tracing::warn!(
+                            target: "tool_use_diag",
+                            exception_type = %exception_type,
+                            message = %message,
+                            "[DIAG] ContentLengthExceededException 触发，但当前没有累积中的 tool_use（截断发生在普通文本阶段）"
+                        );
+                    } else {
+                        for (tool_id, buf) in &self.tool_input_diag_buffers {
+                            let chunks = self
+                                .tool_input_diag_chunks
+                                .get(tool_id)
+                                .copied()
+                                .unwrap_or(0);
+                            let parse_result = serde_json::from_str::<serde_json::Value>(buf);
+                            tracing::error!(
+                                target: "tool_use_diag",
+                                exception_type = %exception_type,
+                                tool_use_id = %tool_id,
+                                chunks = chunks,
+                                total_bytes = buf.len(),
+                                tail = %tail_preview(buf, 200),
+                                json_valid = parse_result.is_ok(),
+                                parse_error = parse_result.as_ref().err().map(|e| e.to_string()).unwrap_or_default(),
+                                "[DIAG] 上游 max_tokens 截断时 tool_use partial_json 现场"
+                            );
+                        }
+                    }
                 }
                 tracing::warn!("收到异常事件: {} - {}", exception_type, message);
                 Vec::new()
@@ -1015,6 +1061,27 @@ impl StreamContext {
         if !tool_use.input.is_empty() {
             self.output_tokens += (tool_use.input.len() as i32 + 3) / 4; // 估算 token
 
+            // [DIAG] 累积 partial_json 片段，记录每段长度
+            let diag_buf = self
+                .tool_input_diag_buffers
+                .entry(tool_use.tool_use_id.clone())
+                .or_default();
+            diag_buf.push_str(&tool_use.input);
+            let chunks = self
+                .tool_input_diag_chunks
+                .entry(tool_use.tool_use_id.clone())
+                .or_insert(0);
+            *chunks += 1;
+            tracing::debug!(
+                target: "tool_use_diag",
+                tool_use_id = %tool_use.tool_use_id,
+                tool_name = %tool_use.name,
+                chunk_index = *chunks,
+                chunk_bytes = tool_use.input.len(),
+                cumulative_bytes = diag_buf.len(),
+                "[DIAG] 收到 tool_use partial_json 片段"
+            );
+
             if let Some(delta_event) = self.state_manager.handle_content_block_delta(
                 block_index,
                 json!({
@@ -1032,6 +1099,34 @@ impl StreamContext {
 
         // 如果是完整的工具调用（stop=true），发送 content_block_stop
         if tool_use.stop {
+            // [DIAG] 校验累积 JSON 是否合法
+            if let Some(buf) = self.tool_input_diag_buffers.get(&tool_use.tool_use_id) {
+                let chunks = self
+                    .tool_input_diag_chunks
+                    .get(&tool_use.tool_use_id)
+                    .copied()
+                    .unwrap_or(0);
+                match serde_json::from_str::<serde_json::Value>(buf) {
+                    Ok(_) => tracing::info!(
+                        target: "tool_use_diag",
+                        tool_use_id = %tool_use.tool_use_id,
+                        tool_name = %tool_use.name,
+                        chunks = chunks,
+                        total_bytes = buf.len(),
+                        "[DIAG] tool_use 正常 stop=true，累积 JSON 合法"
+                    ),
+                    Err(e) => tracing::error!(
+                        target: "tool_use_diag",
+                        tool_use_id = %tool_use.tool_use_id,
+                        tool_name = %tool_use.name,
+                        chunks = chunks,
+                        total_bytes = buf.len(),
+                        tail = %tail_preview(buf, 200),
+                        error = %e,
+                        "[DIAG] tool_use stop=true 但累积 JSON 非法"
+                    ),
+                }
+            }
             if let Some(stop_event) = self.state_manager.handle_content_block_stop(block_index) {
                 events.push(stop_event);
             }
@@ -1119,6 +1214,37 @@ impl StreamContext {
 
         // 使用从 contextUsageEvent 计算的 input_tokens，如果没有则使用估算值
         let final_input_tokens = self.context_input_tokens.unwrap_or(self.input_tokens);
+
+        // [DIAG] 流结束兜底体检：检查是否存在 partial_json 未闭合的 tool_use
+        // 凡是在这里仍存在 buffer 都说明上游没有发 stop=true（异常截断或竞态）
+        for (tool_id, buf) in &self.tool_input_diag_buffers {
+            let chunks = self
+                .tool_input_diag_chunks
+                .get(tool_id)
+                .copied()
+                .unwrap_or(0);
+            let parse_result = serde_json::from_str::<serde_json::Value>(buf);
+            if parse_result.is_err() {
+                tracing::error!(
+                    target: "tool_use_diag",
+                    tool_use_id = %tool_id,
+                    chunks = chunks,
+                    total_bytes = buf.len(),
+                    tail = %tail_preview(buf, 200),
+                    parse_error = %parse_result.as_ref().err().unwrap(),
+                    stop_reason = %self.state_manager.get_stop_reason(),
+                    "[DIAG] 流结束时 tool_use partial_json 累积非法（这就是 Claude Code 报 Error writing file 的根因）"
+                );
+            } else {
+                tracing::debug!(
+                    target: "tool_use_diag",
+                    tool_use_id = %tool_id,
+                    chunks = chunks,
+                    total_bytes = buf.len(),
+                    "[DIAG] 流结束时 tool_use partial_json 累积合法"
+                );
+            }
+        }
 
         // 生成最终事件
         events.extend(
