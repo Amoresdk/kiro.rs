@@ -12,7 +12,14 @@ export function UsageProgress({ balance, loading }: UsageProgressProps) {
 
   if (segment === 'unknown') {
     return (
-      <div className="flex items-center gap-2">
+      <div
+        className="flex items-center gap-2"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={loading ? '用量加载中' : '用量未查询'}
+        aria-busy={loading}
+      >
         <div className="h-1.5 w-[120px] rounded-full bg-gray-100 dark:bg-gray-800" />
         <span className="text-xs text-gray-400">{loading ? '加载中...' : '— / —'}</span>
       </div>
@@ -45,6 +52,11 @@ export function UsageProgress({ balance, loading }: UsageProgressProps) {
           'relative h-1.5 w-[120px] rounded-full bg-gray-100 dark:bg-gray-800',
           segment === 'overflow' && 'border border-red-200 dark:border-red-900'
         )}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(widthPct)}
+        aria-label={`用量 ${numerator} / ${denominator}`}
       >
         {segment === 'overflow' ? (
           <>

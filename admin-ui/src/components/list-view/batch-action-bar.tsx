@@ -42,6 +42,7 @@ export function BatchActionBar(props: BatchActionBarProps) {
             onClick={props.onBatchForceRefresh}
             size="sm" variant="outline"
             disabled={props.batchRefreshing}
+            aria-busy={props.batchRefreshing}
           >
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${props.batchRefreshing ? 'animate-spin' : ''}`} />
             {props.batchRefreshing
@@ -90,7 +91,12 @@ export function BatchActionBar(props: BatchActionBarProps) {
       )}
 
       {props.verifying && props.selectedCount === 0 && (
-        <Button size="sm" variant="secondary">
+        <Button
+          size="sm"
+          variant="secondary"
+          aria-busy={true}
+          aria-label={`验活中，${props.verifyProgress.current} 共 ${props.verifyProgress.total}`}
+        >
           <CheckCircle2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
           验活中... {props.verifyProgress.current}/{props.verifyProgress.total}
         </Button>

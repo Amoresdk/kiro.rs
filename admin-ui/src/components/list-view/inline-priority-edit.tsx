@@ -32,13 +32,14 @@ export function InlinePriorityEdit({ id, value }: InlinePriorityEditProps) {
 
   if (!editing) {
     return (
-      <span
-        className="cursor-pointer hover:underline font-medium"
+      <button
+        type="button"
+        className="hover:underline font-medium"
         onClick={() => { setDraft(String(value)); setEditing(true) }}
         title="点击编辑"
       >
         {value}
-      </span>
+      </button>
     )
   }
 

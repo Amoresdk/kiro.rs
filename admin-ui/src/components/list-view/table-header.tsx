@@ -42,7 +42,11 @@ export function TableHeader({
         key && 'cursor-pointer select-none hover:text-gray-900 dark:hover:text-gray-200',
         className
       )}
-      aria-sort={key && sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+      aria-sort={
+        key
+          ? (sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none')
+          : undefined
+      }
       onClick={key ? () => handleSortClick(key) : undefined}
     >
       {label}{key && <SortIcon k={key} />}
