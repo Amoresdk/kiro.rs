@@ -2275,6 +2275,50 @@ mod tests {
     }
 
     #[test]
+    fn test_disabled_reason_detail_round_trip() {
+        let config = Config::default();
+        let mut cred1 = KiroCredentials::default();
+        cred1.refresh_token = Some("rt".into());
+        cred1.access_token = Some("t1".into());
+        let manager =
+            MultiTokenManager::new(config, vec![cred1], None, None, false).unwrap();
+
+        // 仅在第三次（达到 MAX_FAILURES_PER_CREDENTIAL = 3）写入的 detail 才会被持久化到 entry
+        assert!(manager.report_failure(1, Some("403 transient".into())));
+        assert!(manager.report_failure(1, Some("403 transient again".into())));
+        // 第三次：触发禁用，detail 应当为这次的最终错误
+        manager.report_failure(
+            1,
+            Some(
+                "User ID (24087448-d0d1-7041-afb2-dd913274944e) temporarily is suspended"
+                    .into(),
+            ),
+        );
+
+        let snapshot = manager.snapshot();
+        let entry = snapshot.entries.iter().find(|e| e.id == 1).unwrap();
+        assert!(entry.disabled);
+        assert_eq!(entry.disabled_reason.as_deref(), Some("TooManyFailures"));
+        let detail = entry.disabled_reason_detail.as_deref().unwrap();
+        assert!(
+            detail.contains("temporarily is suspended"),
+            "expected detail to include final error message, got: {}",
+            detail
+        );
+    }
+
+    #[test]
+    fn test_truncate_detail_handles_oversized_utf8() {
+        // 600 个汉字 ≈ 1800 字节，截断到 500 字节应当不破坏 UTF-8 边界
+        let long: String = "测".repeat(600);
+        let truncated = MultiTokenManager::truncate_detail(&long);
+        assert!(truncated.len() <= 500 + 4); // +4 留给省略号
+        assert!(truncated.chars().last() == Some('…'));
+        // 确保是合法 UTF-8（如果不是，下面会 panic）
+        let _ = truncated.as_bytes();
+    }
+
+    #[test]
     fn test_multi_token_manager_report_success() {
         let config = Config::default();
         let cred = KiroCredentials::default();
