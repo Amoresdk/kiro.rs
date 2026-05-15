@@ -196,3 +196,41 @@ function sha256Pure(data: Uint8Array): string {
     .map(v => (v >>> 0).toString(16).padStart(8, '0'))
     .join('')
 }
+
+/** 把绝对时间字符串格式化为「X 分钟前」相对时间。null 时返回「从未使用」 */
+export function formatRelativeTime(iso: string | null): string {
+  if (!iso) return '从未使用'
+  const t = new Date(iso).getTime()
+  const now = Date.now()
+  const diff = now - t
+  if (diff < 0) return '刚刚'
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return `${seconds} 秒前`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  return `${days} 天前`
+}
+
+/** 把 ISO 时间格式化为日历日期：2026-04-01 */
+export function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** 把秒级 unix 时间格式化为「N 天后」相对值 */
+export function formatRelativeFuture(unixSec: number | null): string {
+  if (!unixSec) return '—'
+  const diff = unixSec * 1000 - Date.now()
+  if (diff <= 0) return '已重置'
+  const days = Math.floor(diff / 86400000)
+  if (days >= 1) return `${days} 天后`
+  const hours = Math.floor(diff / 3600000)
+  return `${hours} 小时后`
+}
