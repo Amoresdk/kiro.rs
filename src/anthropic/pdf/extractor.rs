@@ -7,21 +7,20 @@
 use super::error::PdfError;
 
 /// PDF 文本提取器
-// binary-only crate 下 handler 层尚未接入，Task 4+ 接通后可移除
-#[allow(dead_code)]
 pub trait PdfTextExtractor: Send + Sync {
     /// 从 PDF 字节抽取纯文本。失败时返回 `PdfError::ParseFailed`。
     fn extract_text(&self, pdf_bytes: &[u8]) -> Result<String, PdfError>;
 }
 
 /// 基于 `pdf-extract` crate 的默认实现
-// binary-only crate 下 handler 层尚未接入，Task 4+ 接通后可移除
-#[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PdfExtractExtractor;
 
 impl PdfTextExtractor for PdfExtractExtractor {
     fn extract_text(&self, pdf_bytes: &[u8]) -> Result<String, PdfError> {
+        // TODO(spawn_blocking): 当前在 handler 调用栈内同步执行 pdf-extract，
+        // 32MB 上限的小 PDF 在常规负载下可接受；高并发或文本量大时建议
+        // 用 tokio::task::spawn_blocking 包裹 extract_text 避免阻塞 axum worker。
         let bytes = pdf_bytes.to_vec();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             pdf_extract::extract_text_from_mem(&bytes)
