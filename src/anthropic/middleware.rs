@@ -56,13 +56,6 @@ impl AppState {
         self.pdf_config = Arc::new(cfg);
         self
     }
-
-    /// 设置 PDF 提取器（供测试或 Task 10 panic 兜底注入自定义实现）
-    #[allow(dead_code)]
-    pub fn with_pdf_extractor(mut self, extractor: Arc<dyn PdfTextExtractor>) -> Self {
-        self.pdf_extractor = extractor;
-        self
-    }
 }
 
 /// API Key 认证中间件
