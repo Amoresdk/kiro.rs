@@ -6,5 +6,7 @@
 pub mod error;
 pub mod extractor;
 
+// 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
+// unused_imports lint 会对 PdfError re-export 报警告。Task 4 改造为 lib + bin 后可移除。
 #[allow(unused_imports)]
 pub use error::PdfError;
