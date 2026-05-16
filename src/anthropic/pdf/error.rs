@@ -4,32 +4,18 @@ use std::fmt;
 
 // 错误码字符串常量（对外契约）。
 // 客户端可按这些常量做错误分支匹配，而不是裸字符串硬编码。
-// 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
-// dead_code lint 会对未被使用的常量报警告。Task 4 改造为 lib + bin 后可移除。
-#[allow(dead_code)]
 pub const CODE_DISABLED: &str = "document_disabled";
-#[allow(dead_code)]
 pub const CODE_UNSUPPORTED_SOURCE: &str = "document_unsupported_source";
-#[allow(dead_code)]
 pub const CODE_UNSUPPORTED_MEDIA_TYPE: &str = "document_unsupported_media_type";
-#[allow(dead_code)]
 pub const CODE_MISSING_SOURCE: &str = "document_missing_source";
-#[allow(dead_code)]
 pub const CODE_INVALID_BASE64: &str = "document_invalid_base64";
-#[allow(dead_code)]
 pub const CODE_TOO_LARGE: &str = "document_too_large";
-#[allow(dead_code)]
 pub const CODE_PARSE_FAILED: &str = "document_parse_failed";
-#[allow(dead_code)]
 pub const CODE_EMPTY_TEXT: &str = "document_empty_text";
-#[allow(dead_code)]
 pub const CODE_TEXT_TOO_LARGE: &str = "document_text_too_large";
 
 /// PDF 处理错误
 #[derive(Debug)]
-// 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
-// dead_code lint 会对 PdfError / code() 报警告。Task 4 改造为 lib + bin 后可移除。
-#[allow(dead_code)]
 pub enum PdfError {
     /// 反代未启用 PDF 支持
     Disabled,

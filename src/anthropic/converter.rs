@@ -16,6 +16,7 @@ use crate::kiro::model::requests::tool::{
 };
 
 use super::types::{ContentBlock, MessagesRequest};
+use crate::anthropic::pdf::{DocumentCounter, PdfContext, process_pdf_block};
 
 /// 规范化 JSON Schema，修复 MCP 工具定义中常见的类型问题
 ///
@@ -131,6 +132,7 @@ pub struct ConversionResult {
 pub enum ConversionError {
     UnsupportedModel(String),
     EmptyMessages,
+    Pdf(crate::anthropic::pdf::PdfError),
 }
 
 impl std::fmt::Display for ConversionError {
@@ -138,11 +140,18 @@ impl std::fmt::Display for ConversionError {
         match self {
             ConversionError::UnsupportedModel(model) => write!(f, "模型不支持: {}", model),
             ConversionError::EmptyMessages => write!(f, "消息列表为空"),
+            ConversionError::Pdf(e) => write!(f, "{}", e),
         }
     }
 }
 
 impl std::error::Error for ConversionError {}
+
+impl From<crate::anthropic::pdf::PdfError> for ConversionError {
+    fn from(e: crate::anthropic::pdf::PdfError) -> Self {
+        ConversionError::Pdf(e)
+    }
+}
 
 /// 从 metadata.user_id 中提取 session UUID
 ///
@@ -217,7 +226,10 @@ fn create_placeholder_tool(name: &str) -> Tool {
 }
 
 /// 将 Anthropic 请求转换为 Kiro 请求
-pub fn convert_request(req: &MessagesRequest) -> Result<ConversionResult, ConversionError> {
+pub fn convert_request(
+    req: &MessagesRequest,
+    pdf_ctx: &PdfContext<'_>,
+) -> Result<ConversionResult, ConversionError> {
     // 1. 映射模型
     let model_id = map_model(&req.model)
         .ok_or_else(|| ConversionError::UnsupportedModel(req.model.clone()))?;
@@ -256,14 +268,14 @@ pub fn convert_request(req: &MessagesRequest) -> Result<ConversionResult, Conver
 
     // 5. 处理最后一条消息作为 current_message（经过 prefill 预处理，末尾必为 user）
     let last_message = messages.last().unwrap();
-    let (text_content, images, tool_results) = process_message_content(&last_message.content)?;
+    let (text_content, images, tool_results) = process_message_content(&last_message.content, pdf_ctx)?;
 
     // 6. 转换工具定义（超长名称自动缩短并记录映射）
     let mut tool_name_map = HashMap::new();
     let mut tools = convert_tools(&req.tools, &mut tool_name_map);
 
     // 7. 构建历史消息（需要先构建，以便收集历史中使用的工具）
-    let mut history = build_history(req, messages, &model_id, &mut tool_name_map)?;
+    let mut history = build_history(req, messages, &model_id, &mut tool_name_map, pdf_ctx)?;
 
     // 8. 验证并过滤 tool_use/tool_result 配对
     // 移除孤立的 tool_result（没有对应的 tool_use）
@@ -342,10 +354,12 @@ fn determine_chat_trigger_type(_req: &MessagesRequest) -> String {
 /// 处理消息内容，提取文本、图片和工具结果
 fn process_message_content(
     content: &serde_json::Value,
+    pdf_ctx: &PdfContext<'_>,
 ) -> Result<(String, Vec<KiroImage>, Vec<ToolResult>), ConversionError> {
     let mut text_parts = Vec::new();
     let mut images = Vec::new();
     let mut tool_results = Vec::new();
+    let mut doc_counter = DocumentCounter::new();
 
     match content {
         serde_json::Value::String(s) => {
@@ -367,6 +381,10 @@ fn process_message_content(
                                 }
                             }
                         }
+                        "document" => {
+                            let wrapped = process_pdf_block(&block, &mut doc_counter, pdf_ctx)?;
+                            text_parts.push(wrapped);
+                        }
                         "tool_result" => {
                             if let Some(tool_use_id) = block.tool_use_id {
                                 let result_content = extract_tool_result_content(&block.content);
@@ -383,9 +401,7 @@ fn process_message_content(
                                 tool_results.push(result);
                             }
                         }
-                        "tool_use" => {
-                            // tool_use 在 assistant 消息中处理，这里忽略
-                        }
+                        "tool_use" => {}
                         _ => {}
                     }
                 }
@@ -649,7 +665,7 @@ fn has_thinking_tags(content: &str) -> bool {
 ///   注意：该切片与 `req.messages` 可能不同（prefill 时会截断末尾的 assistant 消息），
 ///   调用方应始终使用此参数而非 `req.messages`。
 /// * `model_id` - 已映射的 Kiro 模型 ID
-fn build_history(req: &MessagesRequest, messages: &[super::types::Message], model_id: &str, tool_name_map: &mut HashMap<String, String>) -> Result<Vec<Message>, ConversionError> {
+fn build_history(req: &MessagesRequest, messages: &[super::types::Message], model_id: &str, tool_name_map: &mut HashMap<String, String>, pdf_ctx: &PdfContext<'_>) -> Result<Vec<Message>, ConversionError> {
     let mut history = Vec::new();
 
     // 生成thinking前缀（如果需要）
@@ -717,7 +733,7 @@ fn build_history(req: &MessagesRequest, messages: &[super::types::Message], mode
         } else if msg.role == "assistant" {
             // 先处理累积的 user 消息
             if !user_buffer.is_empty() {
-                let merged_user = merge_user_messages(&user_buffer, model_id)?;
+                let merged_user = merge_user_messages(&user_buffer, model_id, pdf_ctx)?;
                 history.push(Message::User(merged_user));
                 user_buffer.clear();
             }
@@ -734,7 +750,7 @@ fn build_history(req: &MessagesRequest, messages: &[super::types::Message], mode
 
     // 处理结尾的孤立 user 消息
     if !user_buffer.is_empty() {
-        let merged_user = merge_user_messages(&user_buffer, model_id)?;
+        let merged_user = merge_user_messages(&user_buffer, model_id, pdf_ctx)?;
         history.push(Message::User(merged_user));
 
         // 自动配对一个 "OK" 的 assistant 响应
@@ -749,13 +765,14 @@ fn build_history(req: &MessagesRequest, messages: &[super::types::Message], mode
 fn merge_user_messages(
     messages: &[&super::types::Message],
     model_id: &str,
+    pdf_ctx: &PdfContext<'_>,
 ) -> Result<HistoryUserMessage, ConversionError> {
     let mut content_parts = Vec::new();
     let mut all_images = Vec::new();
     let mut all_tool_results = Vec::new();
 
     for msg in messages {
-        let (text, images, tool_results) = process_message_content(&msg.content)?;
+        let (text, images, tool_results) = process_message_content(&msg.content, pdf_ctx)?;
         if !text.is_empty() {
             content_parts.push(text);
         }
@@ -895,6 +912,13 @@ fn merge_assistant_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn convert_request_default(req: &MessagesRequest) -> Result<ConversionResult, ConversionError> {
+        let cfg = crate::model::config::PdfConfig::default();
+        let extractor = crate::anthropic::pdf::PdfExtractExtractor;
+        let ctx = crate::anthropic::pdf::PdfContext { config: &cfg, extractor: &extractor };
+        convert_request(req, &ctx)
+    }
 
     #[test]
     fn test_map_model_sonnet() {
@@ -1092,7 +1116,7 @@ mod tests {
             metadata: None,
         };
 
-        let result = convert_request(&req).unwrap();
+        let result = convert_request_default(&req).unwrap();
 
         // 应该有映射
         assert_eq!(result.tool_name_map.len(), 1);
@@ -1155,7 +1179,7 @@ mod tests {
             metadata: None,
         };
 
-        let result = convert_request(&req).unwrap();
+        let result = convert_request_default(&req).unwrap();
         let short_name = result.tool_name_map.iter().next().unwrap().0.clone();
 
         // 历史中 assistant 消息的 tool_use name 也应该被映射
@@ -1212,7 +1236,7 @@ mod tests {
             metadata: None,
         };
 
-        let result = convert_request(&req).unwrap();
+        let result = convert_request_default(&req).unwrap();
 
         // 验证 tools 列表中包含了历史中使用的工具的占位符定义
         let tools = &result
@@ -1300,7 +1324,7 @@ mod tests {
             }),
         };
 
-        let result = convert_request(&req).unwrap();
+        let result = convert_request_default(&req).unwrap();
         assert_eq!(
             result.conversation_state.conversation_id,
             "a0662283-7fd3-4399-a7eb-52b9a717ae88"
@@ -1328,7 +1352,7 @@ mod tests {
             metadata: None,
         };
 
-        let result = convert_request(&req).unwrap();
+        let result = convert_request_default(&req).unwrap();
         // 验证生成的是有效的 UUID 格式
         assert_eq!(result.conversation_state.conversation_id.len(), 36);
         assert_eq!(
@@ -1758,7 +1782,7 @@ mod tests {
             metadata: None,
         };
 
-        let result = convert_request(&req);
+        let result = convert_request_default(&req);
         assert!(result.is_ok(), "连续 assistant 消息场景不应报错: {:?}", result.err());
 
         let state = result.unwrap().conversation_state;
@@ -1774,5 +1798,79 @@ mod tests {
             }
         }
         assert!(found_tool_use, "合并后的 assistant 消息应包含 tool_use");
+    }
+
+    mod pdf_dispatch_tests {
+        use super::*;
+        use crate::anthropic::pdf::{PdfContext, PdfError, PdfTextExtractor};
+        use crate::model::config::PdfConfig;
+
+        struct StubExtractor(String);
+        impl PdfTextExtractor for StubExtractor {
+            fn extract_text(&self, _: &[u8]) -> Result<String, PdfError> {
+                Ok(self.0.clone())
+            }
+        }
+
+        fn run(content: serde_json::Value, extractor_text: &str) -> (String, Vec<KiroImage>) {
+            let cfg = PdfConfig::default();
+            let extractor = StubExtractor(extractor_text.to_string());
+            let ctx = PdfContext { config: &cfg, extractor: &extractor };
+            let (text, images, _) = process_message_content(&content, &ctx).unwrap();
+            (text, images)
+        }
+
+        #[test]
+        fn document_block_emits_wrapped_text() {
+            let content = serde_json::json!([
+                { "type": "text", "text": "前缀文本" },
+                {
+                    "type": "document",
+                    "title": "a.pdf",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": "JVBERi0K"
+                    }
+                }
+            ]);
+            let (text, _) = run(content, "PDF 内容样例");
+            assert!(text.contains("前缀文本"));
+            assert!(text.contains("<document index=\"1\">"));
+            assert!(text.contains("<source>a.pdf</source>"));
+            assert!(text.contains("PDF 内容样例"));
+        }
+
+        #[test]
+        fn multiple_document_blocks_get_sequential_index() {
+            let content = serde_json::json!([
+                {
+                    "type": "document",
+                    "source": { "type": "base64", "media_type": "application/pdf", "data": "JVBERi0K" }
+                },
+                {
+                    "type": "document",
+                    "source": { "type": "base64", "media_type": "application/pdf", "data": "JVBERi0K" }
+                }
+            ]);
+            let (text, _) = run(content, "x");
+            assert!(text.contains("index=\"1\""));
+            assert!(text.contains("index=\"2\""));
+        }
+
+        #[test]
+        fn unsupported_document_source_propagates_error() {
+            let content = serde_json::json!([
+                {
+                    "type": "document",
+                    "source": { "type": "url", "media_type": "application/pdf", "data": "https://x" }
+                }
+            ]);
+            let cfg = PdfConfig::default();
+            let extractor = StubExtractor("x".into());
+            let ctx = PdfContext { config: &cfg, extractor: &extractor };
+            let err = process_message_content(&content, &ctx).unwrap_err();
+            assert!(matches!(err, ConversionError::Pdf(PdfError::UnsupportedSource(_))));
+        }
     }
 }

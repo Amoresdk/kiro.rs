@@ -26,6 +26,8 @@ use super::middleware::AppState;
 use super::stream::{BufferedStreamContext, SseEvent, StreamContext};
 use super::types::{CountTokensRequest, CountTokensResponse, ErrorResponse, MessagesRequest, Model, ModelsResponse, OutputConfig, Thinking};
 use super::websearch;
+use crate::anthropic::pdf::{PdfContext, PdfExtractExtractor};
+use crate::model::config::PdfConfig;
 
 /// 将 KiroProvider 错误映射为 HTTP 响应
 fn map_provider_error(err: Error) -> Response {
@@ -239,7 +241,11 @@ pub async fn post_messages(
     }
 
     // 转换请求
-    let conversion_result = match convert_request(&payload) {
+    // TODO(Task 9): 从 AppState 注入 pdf_config / pdf_extractor
+    let _pdf_cfg = PdfConfig::default();
+    let _pdf_ext = PdfExtractExtractor;
+    let pdf_ctx = PdfContext { config: &_pdf_cfg, extractor: &_pdf_ext };
+    let conversion_result = match convert_request(&payload, &pdf_ctx) {
         Ok(result) => result,
         Err(e) => {
             let (error_type, message) = match &e {
@@ -248,6 +254,9 @@ pub async fn post_messages(
                 }
                 ConversionError::EmptyMessages => {
                     ("invalid_request_error", "消息列表为空".to_string())
+                }
+                ConversionError::Pdf(pdf_err) => {
+                    ("invalid_request_error", format!("{}", pdf_err))
                 }
             };
             tracing::warn!("请求转换失败: {}", e);
@@ -788,7 +797,11 @@ pub async fn post_messages_cc(
     }
 
     // 转换请求
-    let conversion_result = match convert_request(&payload) {
+    // TODO(Task 9): 从 AppState 注入 pdf_config / pdf_extractor
+    let _pdf_cfg = PdfConfig::default();
+    let _pdf_ext = PdfExtractExtractor;
+    let pdf_ctx = PdfContext { config: &_pdf_cfg, extractor: &_pdf_ext };
+    let conversion_result = match convert_request(&payload, &pdf_ctx) {
         Ok(result) => result,
         Err(e) => {
             let (error_type, message) = match &e {
@@ -797,6 +810,9 @@ pub async fn post_messages_cc(
                 }
                 ConversionError::EmptyMessages => {
                     ("invalid_request_error", "消息列表为空".to_string())
+                }
+                ConversionError::Pdf(pdf_err) => {
+                    ("invalid_request_error", format!("{}", pdf_err))
                 }
             };
             tracing::warn!("请求转换失败: {}", e);

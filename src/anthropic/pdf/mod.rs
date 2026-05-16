@@ -3,11 +3,7 @@
 pub mod error;
 pub mod extractor;
 
-// 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
-// unused_imports lint 会对这些 re-export 报警告。Task 4 改造为 lib + bin 后可移除。
-#[allow(unused_imports)]
 pub use error::PdfError;
-#[allow(unused_imports)]
 pub use extractor::{PdfExtractExtractor, PdfTextExtractor};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -18,7 +14,6 @@ use crate::model::config::PdfConfig;
 /// 反代 PDF 处理上下文
 ///
 /// 由 handler 注入到 converter，把"配置 + 提取器"打包传递。
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct PdfContext<'a> {
     pub config: &'a PdfConfig,
@@ -26,10 +21,8 @@ pub struct PdfContext<'a> {
 }
 
 /// 单消息内的 `<document>` 编号计数器
-#[allow(dead_code)]
 pub struct DocumentCounter(usize);
 
-#[allow(dead_code)]
 impl DocumentCounter {
     pub fn new() -> Self {
         Self(0)
@@ -47,7 +40,6 @@ impl Default for DocumentCounter {
 }
 
 /// 处理一个 `document` content block，返回 `<document index="N">...</document>` 包裹的字符串
-#[allow(dead_code)]
 pub fn process_pdf_block(
     block: &ContentBlock,
     counter: &mut DocumentCounter,
@@ -113,7 +105,6 @@ pub fn process_pdf_block(
     ))
 }
 
-#[allow(dead_code)]
 fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
