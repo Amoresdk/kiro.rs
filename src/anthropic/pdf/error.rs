@@ -4,6 +4,8 @@ use std::fmt;
 
 /// PDF 处理错误
 #[derive(Debug)]
+// 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
+// dead_code lint 会对 PdfError / code() 报警告。Task 4 改造为 lib + bin 后可移除。
 #[allow(dead_code)]
 pub enum PdfError {
     /// 反代未启用 PDF 支持
