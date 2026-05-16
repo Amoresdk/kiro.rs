@@ -10,8 +10,10 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 
+use crate::anthropic::pdf::{PdfExtractExtractor, PdfTextExtractor};
 use crate::common::auth;
 use crate::kiro::provider::KiroProvider;
+use crate::model::config::PdfConfig;
 
 use super::types::ErrorResponse;
 
@@ -25,6 +27,10 @@ pub struct AppState {
     pub kiro_provider: Option<Arc<KiroProvider>>,
     /// 是否开启非流式响应的 thinking 块提取
     pub extract_thinking: bool,
+    /// PDF 处理配置
+    pub pdf_config: Arc<PdfConfig>,
+    /// PDF 文本提取器
+    pub pdf_extractor: Arc<dyn PdfTextExtractor>,
 }
 
 impl AppState {
@@ -34,12 +40,27 @@ impl AppState {
             api_key: api_key.into(),
             kiro_provider: None,
             extract_thinking,
+            pdf_config: Arc::new(PdfConfig::default()),
+            pdf_extractor: Arc::new(PdfExtractExtractor),
         }
     }
 
     /// 设置 KiroProvider
     pub fn with_kiro_provider(mut self, provider: KiroProvider) -> Self {
         self.kiro_provider = Some(Arc::new(provider));
+        self
+    }
+
+    /// 设置 PDF 配置
+    pub fn with_pdf_config(mut self, cfg: PdfConfig) -> Self {
+        self.pdf_config = Arc::new(cfg);
+        self
+    }
+
+    /// 设置 PDF 提取器（供测试或 Task 10 panic 兜底注入自定义实现）
+    #[allow(dead_code)]
+    pub fn with_pdf_extractor(mut self, extractor: Arc<dyn PdfTextExtractor>) -> Self {
+        self.pdf_extractor = extractor;
         self
     }
 }
