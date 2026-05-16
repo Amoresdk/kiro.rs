@@ -2,6 +2,29 @@
 
 use std::fmt;
 
+// 错误码字符串常量（对外契约）。
+// 客户端可按这些常量做错误分支匹配，而不是裸字符串硬编码。
+// 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
+// dead_code lint 会对未被使用的常量报警告。Task 4 改造为 lib + bin 后可移除。
+#[allow(dead_code)]
+pub const CODE_DISABLED: &str = "document_disabled";
+#[allow(dead_code)]
+pub const CODE_UNSUPPORTED_SOURCE: &str = "document_unsupported_source";
+#[allow(dead_code)]
+pub const CODE_UNSUPPORTED_MEDIA_TYPE: &str = "document_unsupported_media_type";
+#[allow(dead_code)]
+pub const CODE_MISSING_SOURCE: &str = "document_missing_source";
+#[allow(dead_code)]
+pub const CODE_INVALID_BASE64: &str = "document_invalid_base64";
+#[allow(dead_code)]
+pub const CODE_TOO_LARGE: &str = "document_too_large";
+#[allow(dead_code)]
+pub const CODE_PARSE_FAILED: &str = "document_parse_failed";
+#[allow(dead_code)]
+pub const CODE_EMPTY_TEXT: &str = "document_empty_text";
+#[allow(dead_code)]
+pub const CODE_TEXT_TOO_LARGE: &str = "document_text_too_large";
+
 /// PDF 处理错误
 #[derive(Debug)]
 // 当前是 binary crate（无 lib.rs），后续 task 接通 converter 与 handler 之前
@@ -32,15 +55,15 @@ impl PdfError {
     /// 对外暴露的稳定错误码（用于 Anthropic 错误响应 message 前缀，便于客户端识别）
     pub fn code(&self) -> &'static str {
         match self {
-            PdfError::Disabled => "document_disabled",
-            PdfError::UnsupportedSource(_) => "document_unsupported_source",
-            PdfError::UnsupportedMediaType(_) => "document_unsupported_media_type",
-            PdfError::MissingSource => "document_missing_source",
-            PdfError::InvalidBase64(_) => "document_invalid_base64",
-            PdfError::TooLarge { .. } => "document_too_large",
-            PdfError::ParseFailed(_) => "document_parse_failed",
-            PdfError::EmptyText => "document_empty_text",
-            PdfError::TextTooLarge { .. } => "document_text_too_large",
+            PdfError::Disabled => CODE_DISABLED,
+            PdfError::UnsupportedSource(_) => CODE_UNSUPPORTED_SOURCE,
+            PdfError::UnsupportedMediaType(_) => CODE_UNSUPPORTED_MEDIA_TYPE,
+            PdfError::MissingSource => CODE_MISSING_SOURCE,
+            PdfError::InvalidBase64(_) => CODE_INVALID_BASE64,
+            PdfError::TooLarge { .. } => CODE_TOO_LARGE,
+            PdfError::ParseFailed(_) => CODE_PARSE_FAILED,
+            PdfError::EmptyText => CODE_EMPTY_TEXT,
+            PdfError::TextTooLarge { .. } => CODE_TEXT_TOO_LARGE,
         }
     }
 }
@@ -99,32 +122,32 @@ mod tests {
 
     #[test]
     fn code_is_stable_for_each_variant() {
-        assert_eq!(PdfError::Disabled.code(), "document_disabled");
+        assert_eq!(PdfError::Disabled.code(), CODE_DISABLED);
         assert_eq!(
             PdfError::UnsupportedSource("url".into()).code(),
-            "document_unsupported_source"
+            CODE_UNSUPPORTED_SOURCE
         );
         assert_eq!(
             PdfError::UnsupportedMediaType("image/png".into()).code(),
-            "document_unsupported_media_type"
+            CODE_UNSUPPORTED_MEDIA_TYPE
         );
-        assert_eq!(PdfError::MissingSource.code(), "document_missing_source");
+        assert_eq!(PdfError::MissingSource.code(), CODE_MISSING_SOURCE);
         assert_eq!(
             PdfError::InvalidBase64("bad".into()).code(),
-            "document_invalid_base64"
+            CODE_INVALID_BASE64
         );
         assert_eq!(
             PdfError::TooLarge { bytes: 100, limit: 50 }.code(),
-            "document_too_large"
+            CODE_TOO_LARGE
         );
         assert_eq!(
             PdfError::ParseFailed("x".into()).code(),
-            "document_parse_failed"
+            CODE_PARSE_FAILED
         );
-        assert_eq!(PdfError::EmptyText.code(), "document_empty_text");
+        assert_eq!(PdfError::EmptyText.code(), CODE_EMPTY_TEXT);
         assert_eq!(
             PdfError::TextTooLarge { chars: 10, limit: 5 }.code(),
-            "document_text_too_large"
+            CODE_TEXT_TOO_LARGE
         );
     }
 
@@ -135,5 +158,15 @@ mod tests {
         assert!(s.contains("document_too_large"));
         assert!(s.contains("1000"));
         assert!(s.contains("100"));
+    }
+
+    #[test]
+    fn display_includes_dynamic_fields() {
+        assert!(format!("{}", PdfError::UnsupportedSource("url".into())).contains("url"));
+        assert!(format!("{}", PdfError::UnsupportedMediaType("image/png".into())).contains("image/png"));
+        assert!(format!("{}", PdfError::InvalidBase64("padding".into())).contains("padding"));
+        assert!(format!("{}", PdfError::ParseFailed("encrypted".into())).contains("encrypted"));
+        let s = format!("{}", PdfError::TextTooLarge { chars: 999, limit: 100 });
+        assert!(s.contains("999") && s.contains("100"));
     }
 }
