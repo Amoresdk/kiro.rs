@@ -352,14 +352,30 @@ fn determine_chat_trigger_type(_req: &MessagesRequest) -> String {
 }
 
 /// 处理消息内容，提取文本、图片和工具结果
+///
+/// 该薄壳为单条消息独立分配 `DocumentCounter`。如果上层需要在多条消息之间
+/// 共享 PDF 编号（例如 `merge_user_messages` 把多条 user 合成一条逻辑消息），
+/// 应改用 [`process_message_content_with_counter`]。
 fn process_message_content(
     content: &serde_json::Value,
+    pdf_ctx: &PdfContext<'_>,
+) -> Result<(String, Vec<KiroImage>, Vec<ToolResult>), ConversionError> {
+    let mut counter = DocumentCounter::new();
+    process_message_content_with_counter(content, &mut counter, pdf_ctx)
+}
+
+/// 处理消息内容（共享 `DocumentCounter` 版本）
+///
+/// 与 [`process_message_content`] 行为一致，但 PDF 编号由调用方维护，
+/// 适用于多条消息合并场景下连续编号。
+fn process_message_content_with_counter(
+    content: &serde_json::Value,
+    doc_counter: &mut DocumentCounter,
     pdf_ctx: &PdfContext<'_>,
 ) -> Result<(String, Vec<KiroImage>, Vec<ToolResult>), ConversionError> {
     let mut text_parts = Vec::new();
     let mut images = Vec::new();
     let mut tool_results = Vec::new();
-    let mut doc_counter = DocumentCounter::new();
 
     match content {
         serde_json::Value::String(s) => {
@@ -382,7 +398,7 @@ fn process_message_content(
                             }
                         }
                         "document" => {
-                            let wrapped = process_pdf_block(&block, &mut doc_counter, pdf_ctx)?;
+                            let wrapped = process_pdf_block(&block, doc_counter, pdf_ctx)?;
                             text_parts.push(wrapped);
                         }
                         "tool_result" => {
@@ -770,9 +786,13 @@ fn merge_user_messages(
     let mut content_parts = Vec::new();
     let mut all_images = Vec::new();
     let mut all_tool_results = Vec::new();
+    // 多条 user 消息合并为一条逻辑消息时，PDF 编号需跨原始消息连续递增，
+    // 否则每条独立 counter 会让合并后的 index 出现 1,2,1,2 重复。
+    let mut doc_counter = DocumentCounter::new();
 
     for msg in messages {
-        let (text, images, tool_results) = process_message_content(&msg.content, pdf_ctx)?;
+        let (text, images, tool_results) =
+            process_message_content_with_counter(&msg.content, &mut doc_counter, pdf_ctx)?;
         if !text.is_empty() {
             content_parts.push(text);
         }
@@ -1871,6 +1891,57 @@ mod tests {
             let ctx = PdfContext { config: &cfg, extractor: &extractor };
             let err = process_message_content(&content, &ctx).unwrap_err();
             assert!(matches!(err, ConversionError::Pdf(PdfError::UnsupportedSource(_))));
+        }
+
+        /// 回归：合并相邻 user 消息时 PDF index 应跨原始消息连续递增，
+        /// 避免出现 1,2,1,2 这样的重复编号。
+        #[test]
+        fn merged_user_messages_share_counter() {
+            // 构造 3 条 user 消息：前两条各带 1 个 PDF（会进入 history 并被 merge），
+            // 最后一条是 current message。
+            let req: MessagesRequest = serde_json::from_str(r#"{
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 256,
+                "stream": false,
+                "messages": [
+                    {"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0K"}}]},
+                    {"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0K"}}]},
+                    {"role":"user","content":"trailing message"}
+                ]
+            }"#).unwrap();
+
+            let cfg = PdfConfig::default();
+            let extractor = StubExtractor("X".into());
+            let ctx = PdfContext { config: &cfg, extractor: &extractor };
+            let result = convert_request(&req, &ctx).unwrap();
+
+            // 找到合并后的 history user 消息
+            let history = &result.conversation_state.history;
+            let merged_content = history
+                .iter()
+                .find_map(|m| match m {
+                    Message::User(u) => Some(u.user_input_message.content.clone()),
+                    _ => None,
+                })
+                .expect("history 中应存在合并后的 user 消息");
+
+            assert!(
+                merged_content.contains("index=\"1\""),
+                "合并后内容应包含 index=\"1\"：{}",
+                merged_content
+            );
+            assert!(
+                merged_content.contains("index=\"2\""),
+                "合并后内容应包含 index=\"2\"：{}",
+                merged_content
+            );
+            // index=\"1\" 在合并后只应出现一次（不能因为每条消息独立 counter 而重复）
+            let count_idx1 = merged_content.matches("index=\"1\"").count();
+            assert_eq!(
+                count_idx1, 1,
+                "index=\"1\" 应只出现一次，实际 {} 次：{}",
+                count_idx1, merged_content
+            );
         }
     }
 }
