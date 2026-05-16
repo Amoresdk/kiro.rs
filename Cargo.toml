@@ -3,6 +3,14 @@ name = "kiro-rs"
 version = "2026.3.1"
 edition = "2024"
 
+[lib]
+name = "kiro_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kiro-rs"
+path = "src/main.rs"
+
 [features]
 default = ["native-tls"]
 native-tls = ["reqwest/native-tls-vendored"]
@@ -38,3 +46,6 @@ rust-embed = "8"      # 嵌入静态文件
 mime_guess = "2"      # MIME 类型推断
 pdf-extract = "0.10"  # 纯 Rust PDF 文本提取
 base64 = "0.22"       # base64 解码（PDF document block）
+
+[dev-dependencies]
+pdf-writer = "0.12"   # 生成 PDF fixture（集成测试用）

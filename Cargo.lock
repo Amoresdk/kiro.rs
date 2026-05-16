@@ -1014,6 +1014,7 @@ dependencies = [
  "mime_guess",
  "parking_lot",
  "pdf-extract",
+ "pdf-writer",
  "reqwest",
  "rust-embed",
  "serde",
@@ -1328,6 +1329,18 @@ dependencies = [
  "postscript",
  "type1-encoding-parser",
  "unicode-normalization",
+]
+
+[[package]]
+name = "pdf-writer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5df03c7d216de06f93f398ef06f1385a60f2c597bb96f8195c8d98e08a26b1d5"
+dependencies = [
+ "bitflags",
+ "itoa",
+ "memchr",
+ "ryu",
 ]
 
 [[package]]
