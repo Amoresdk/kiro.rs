@@ -26,6 +26,7 @@ use super::middleware::AppState;
 use super::stream::{BufferedStreamContext, SseEvent, StreamContext};
 use super::types::{CountTokensRequest, CountTokensResponse, ErrorResponse, MessagesRequest, Model, ModelsResponse, OutputConfig, Thinking};
 use super::websearch;
+use crate::anthropic::pdf::PdfContext;
 
 /// 将 KiroProvider 错误映射为 HTTP 响应
 fn map_provider_error(err: Error) -> Response {
@@ -239,7 +240,8 @@ pub async fn post_messages(
     }
 
     // 转换请求
-    let conversion_result = match convert_request(&payload) {
+    let pdf_ctx = PdfContext { config: &state.pdf_config, extractor: state.pdf_extractor.as_ref() };
+    let conversion_result = match convert_request(&payload, &pdf_ctx) {
         Ok(result) => result,
         Err(e) => {
             let (error_type, message) = match &e {
@@ -248,6 +250,9 @@ pub async fn post_messages(
                 }
                 ConversionError::EmptyMessages => {
                     ("invalid_request_error", "消息列表为空".to_string())
+                }
+                ConversionError::Pdf(pdf_err) => {
+                    ("invalid_request_error", format!("{}", pdf_err))
                 }
             };
             tracing::warn!("请求转换失败: {}", e);
@@ -788,7 +793,8 @@ pub async fn post_messages_cc(
     }
 
     // 转换请求
-    let conversion_result = match convert_request(&payload) {
+    let pdf_ctx = PdfContext { config: &state.pdf_config, extractor: state.pdf_extractor.as_ref() };
+    let conversion_result = match convert_request(&payload, &pdf_ctx) {
         Ok(result) => result,
         Err(e) => {
             let (error_type, message) = match &e {
@@ -797,6 +803,9 @@ pub async fn post_messages_cc(
                 }
                 ConversionError::EmptyMessages => {
                     ("invalid_request_error", "消息列表为空".to_string())
+                }
+                ConversionError::Pdf(pdf_err) => {
+                    ("invalid_request_error", format!("{}", pdf_err))
                 }
             };
             tracing::warn!("请求转换失败: {}", e);

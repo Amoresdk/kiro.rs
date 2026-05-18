@@ -109,9 +109,50 @@ pub struct Config {
     #[serde(default)]
     pub endpoints: HashMap<String, serde_json::Value>,
 
+    /// PDF 支持配置
+    #[serde(default)]
+    pub pdf: PdfConfig,
+
     /// 配置文件路径（运行时元数据，不写入 JSON）
     #[serde(skip)]
     config_path: Option<PathBuf>,
+}
+
+/// PDF 支持配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfConfig {
+    /// 是否启用 PDF 支持（默认 true）
+    #[serde(default = "default_pdf_enabled")]
+    pub enabled: bool,
+    /// 单 PDF 解码后字节数上限（默认 32 MB）
+    #[serde(default = "default_pdf_max_bytes")]
+    pub max_bytes: u64,
+    /// 单 PDF 抽取文本字符数上限（默认 500_000）
+    #[serde(default = "default_pdf_max_text_chars")]
+    pub max_text_chars: u64,
+}
+
+impl Default for PdfConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_pdf_enabled(),
+            max_bytes: default_pdf_max_bytes(),
+            max_text_chars: default_pdf_max_text_chars(),
+        }
+    }
+}
+
+fn default_pdf_enabled() -> bool {
+    true
+}
+
+fn default_pdf_max_bytes() -> u64 {
+    32 * 1024 * 1024
+}
+
+fn default_pdf_max_text_chars() -> u64 {
+    500_000
 }
 
 fn default_host() -> String {
@@ -184,6 +225,7 @@ impl Default for Config {
             extract_thinking: default_extract_thinking(),
             default_endpoint: default_endpoint(),
             endpoints: HashMap::new(),
+            pdf: PdfConfig::default(),
             config_path: None,
         }
     }
@@ -238,5 +280,43 @@ impl Config {
         let content = serde_json::to_string_pretty(self).context("序列化配置失败")?;
         fs::write(path, content).with_context(|| format!("写入配置文件失败: {}", path.display()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod pdf_config_tests {
+    use super::*;
+
+    #[test]
+    fn pdf_config_defaults() {
+        let cfg = PdfConfig::default();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.max_bytes, 32u64 * 1024 * 1024);
+        assert_eq!(cfg.max_text_chars, 500_000u64);
+    }
+
+    #[test]
+    fn pdf_config_deserialized_from_partial_json() {
+        let cfg: PdfConfig = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.max_bytes, 32u64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn config_with_default_pdf_round_trip() {
+        let cfg = Config::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert!(parsed.pdf.enabled);
+        assert_eq!(parsed.pdf.max_bytes, 32u64 * 1024 * 1024);
+        assert_eq!(parsed.pdf.max_text_chars, 500_000u64);
+    }
+
+    #[test]
+    fn config_without_pdf_field_falls_back_to_defaults() {
+        let cfg: Config = serde_json::from_str(r#"{}"#).unwrap();
+        assert!(cfg.pdf.enabled);
+        assert_eq!(cfg.pdf.max_bytes, 32u64 * 1024 * 1024);
+        assert_eq!(cfg.pdf.max_text_chars, 500_000u64);
     }
 }

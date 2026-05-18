@@ -248,16 +248,21 @@ pub struct ContentBlock {
     pub is_error: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<ImageSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
-/// 图片数据源
+/// content block 数据源（image 与 document 共用）
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ImageSource {
+pub struct BlockSource {
     #[serde(rename = "type")]
     pub source_type: String,
     pub media_type: String,
     pub data: String,
 }
+
+/// 历史别名：保持旧名 `ImageSource` 可用，零回归
+pub type ImageSource = BlockSource;
 
 // === Count Tokens 端点类型 ===
 
@@ -280,4 +285,54 @@ pub struct CountTokensRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CountTokensResponse {
     pub input_tokens: i32,
+}
+
+#[cfg(test)]
+mod content_block_tests {
+    use super::*;
+
+    #[test]
+    fn block_source_alias_compiles() {
+        let s: ImageSource = BlockSource {
+            source_type: "base64".into(),
+            media_type: "image/png".into(),
+            data: "AAA".into(),
+        };
+        assert_eq!(s.source_type, "base64");
+    }
+
+    #[test]
+    fn document_block_with_title_round_trip() {
+        let raw = r#"{
+            "type": "document",
+            "title": "report.pdf",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": "JVBERi0="
+            }
+        }"#;
+        let block: ContentBlock = serde_json::from_str(raw).unwrap();
+        assert_eq!(block.block_type, "document");
+        assert_eq!(block.title.as_deref(), Some("report.pdf"));
+        let src = block.source.as_ref().unwrap();
+        assert_eq!(src.source_type, "base64");
+        assert_eq!(src.media_type, "application/pdf");
+        assert_eq!(src.data, "JVBERi0=");
+    }
+
+    #[test]
+    fn legacy_image_block_without_title_still_parses() {
+        let raw = r#"{
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "AAA"
+            }
+        }"#;
+        let block: ContentBlock = serde_json::from_str(raw).unwrap();
+        assert!(block.title.is_none());
+        assert_eq!(block.source.unwrap().media_type, "image/png");
+    }
 }

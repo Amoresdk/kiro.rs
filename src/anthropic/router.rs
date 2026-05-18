@@ -38,8 +38,9 @@ pub fn create_router_with_provider(
     api_key: impl Into<String>,
     kiro_provider: Option<KiroProvider>,
     extract_thinking: bool,
+    pdf_config: crate::model::config::PdfConfig,
 ) -> Router {
-    let mut state = AppState::new(api_key, extract_thinking);
+    let mut state = AppState::new(api_key, extract_thinking).with_pdf_config(pdf_config);
     if let Some(provider) = kiro_provider {
         state = state.with_kiro_provider(provider);
     }

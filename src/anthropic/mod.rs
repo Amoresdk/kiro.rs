@@ -22,7 +22,7 @@
 //! axum::serve(listener, app).await?;
 //! ```
 
-mod converter;
+pub mod converter;
 mod handlers;
 mod middleware;
 mod router;
@@ -31,3 +31,4 @@ pub mod types;
 mod websearch;
 
 pub use router::create_router_with_provider;
+pub mod pdf;

@@ -1,11 +1,4 @@
-mod admin;
-mod admin_ui;
-mod anthropic;
-mod common;
-mod http_client;
-mod kiro;
-mod model;
-pub mod token;
+use kiro_rs::{admin, admin_ui, anthropic, http_client, kiro, model, token};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -162,6 +155,7 @@ async fn main() {
         &api_key,
         Some(kiro_provider),
         config.extract_thinking,
+        config.pdf.clone(),
     );
 
     // 构建 Admin API 路由（如果配置了非空的 admin_api_key）

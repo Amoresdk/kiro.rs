@@ -45,6 +45,7 @@
 - **Admin 管理**: 可选的 Web 管理界面和 API，支持凭据管理、余额查询等
 - **多级 Region 配置**: 支持全局和凭据级别的 Auth Region / API Region 配置
 - **凭据级代理**: 支持为每个凭据单独配置 HTTP/SOCKS5 代理，优先级：凭据代理 > 全局代理 > 无代理
+- **PDF 支持**: 反代识别 Anthropic `document` content block（base64 PDF），抽取文本后注入消息内容
 
 ---
 
@@ -432,6 +433,74 @@ RUST_LOG=debug ./target/release/kiro-rs
   "messages": [...]
 }
 ```
+
+## PDF 支持
+
+反代支持 Anthropic 标准的 `document` content block（仅 base64 来源）。客户端按以下格式发送 PDF：
+
+```json
+{
+  "type": "document",
+  "title": "report.pdf",
+  "source": {
+    "type": "base64",
+    "media_type": "application/pdf",
+    "data": "<base64-encoded PDF bytes>"
+  }
+}
+```
+
+反代会把 PDF 抽取为纯文本，用 `<document index="N">` 包裹后注入发往上游的消息：
+
+```text
+<document index="1">
+<source>report.pdf</source>
+<document_content>
+（抽取出的 PDF 文本）
+</document_content>
+</document>
+```
+
+### 限制
+
+- 仅支持 `source.type = "base64"`（不支持 `url` 与 `file_id`）
+- 仅支持 `media_type = "application/pdf"`
+- 单 PDF 解码后字节上限：32 MB（可配置 `pdf.maxBytes`）
+- 单 PDF 抽取文本字符上限：500,000（可配置 `pdf.maxTextChars`）
+- 不支持扫描件 PDF（无文本，会返回 `document_empty_text` 错误）
+- 不支持加密 PDF（会返回 `document_parse_failed` 错误）
+
+### 错误码
+
+所有 PDF 相关错误均返回 HTTP 400，错误 message 前缀如下：
+
+| 前缀 | 含义 |
+|---|---|
+| `document_disabled` | `pdf.enabled = false` |
+| `document_unsupported_source` | source.type 不是 base64 |
+| `document_unsupported_media_type` | media_type 不是 application/pdf |
+| `document_missing_source` | source 字段缺失 |
+| `document_invalid_base64` | base64 解码失败 |
+| `document_too_large` | 解码后字节超限 |
+| `document_parse_failed` | PDF 解析失败（加密/损坏） |
+| `document_empty_text` | 抽取文本为空（扫描件） |
+| `document_text_too_large` | 抽取文本字符超限 |
+
+### 配置
+
+`config.json` 中可选段：
+
+```json
+{
+  "pdf": {
+    "enabled": true,
+    "maxBytes": 33554432,
+    "maxTextChars": 500000
+  }
+}
+```
+
+不配置时使用上述默认值。
 
 ## 模型映射
 
